@@ -20,6 +20,8 @@ WiFiManager::WiFiManager() {
     wifiStatus = false;
     lastWifiCheck = 0;
     myWiFi = nullptr;
+    currentNetIndex = -1;
+    attemptsOnCurrentSsid = 0;
 }
 
 /**
@@ -30,6 +32,20 @@ WiFiManager::~WiFiManager() {
         delete myWiFi;
         myWiFi = nullptr;
     }
+}
+
+/**
+ * @brief Tìm vị trí của SSID "ok" cuối cùng trong danh sách configMgr.params.net
+ */
+int WiFiManager::findOkSsidIndex() {
+    if (configMgr.params.netCount == 0) return 0;
+
+    for (uint8_t i = 0; i < configMgr.params.netCount; i++) {
+        if (configMgr.params.net[i].ssid == configMgr.params.lastOkSsid) {
+            return (int)i;
+        }
+    }
+    return 0; // Fallback to index 0 if not found
 }
 
 /**
@@ -48,9 +64,9 @@ bool WiFiManager::isInternetReady() {
 }
 
 /**
- * @brief Quản lý vòng đời kết nối WiFi, tự động thử lại khi mất mạng theo chu kỳ
+ * @brief Quản lý vòng đời kết nối WiFi, hỗ trợ xoay vòng SSID theo cấu hình non-blocking.
  */
-bool WiFiManager::checkAndEstablishWiFiConnection(unsigned long interval) {
+bool WiFiManager::checkAndEstablishWiFiConnection(unsigned long reconnect_interval, unsigned int ssid_interval) {
     // 1. Kiểm tra nếu tính năng WiFi bị vô hiệu hóa trong cấu hình
     if (!configMgr.params.wifiEnabled) {
         if (wifiStatus) {
@@ -64,23 +80,81 @@ bool WiFiManager::checkAndEstablishWiFiConnection(unsigned long interval) {
     }
 
     // 2. Kiểm tra trạng thái thực tế từ thư viện WiFi
+    if (WiFi.status() == WL_CONNECTED) {
+        wifiStatus = true;
+        attemptsOnCurrentSsid = 0; // Reset counter upon active connection
+        return true;
+    }
+
+    wifiStatus = false;
+
+    // 3. Throttle execution based on reconnect_interval (Passthrough non-blockingly)
     unsigned long currentMillis = millis();
-    wifiStatus = (WiFi.status() == WL_CONNECTED);
+    if (lastWifiCheck != 0 && (currentMillis - lastWifiCheck < reconnect_interval)) {
+        return false; // Return immediately to avoid blocking main loop()
+    }
+    lastWifiCheck = currentMillis;
 
-    // 3. Nếu đã đủ thời gian interval hoặc lần đầu tiên chạy (lastWifiCheck == 0)
-    if (currentMillis - lastWifiCheck >= interval || lastWifiCheck == 0) {
-        lastWifiCheck = currentMillis;
+    // Sanity check: Ensure we have registered network configurations
+    if (configMgr.params.netCount == 0) {
+        #if defined(DEBUG_WIFI_SETTING)
+            Serial.println(F("[WiFi] No WiFi credentials available."));
+        #endif
+        return false;
+    }
 
-        // Nếu mất kết nối thì tiến hành thử kết nối lại
-        if (!wifiStatus) {
-            WiFi.mode(WIFI_STA);
-            WiFi.begin(configMgr.params.ssid.c_str(), configMgr.params.password.c_str());
+    // 4. Determine which SSID to try
+    if (ssid_interval == 0) {
+        // Mode 0: Only use the designated "ok" SSID
+        currentNetIndex = findOkSsidIndex();
+    } else {
+        // Mode != 0: Initialize index if unset or out of bounds
+        if (currentNetIndex < 0 || currentNetIndex >= (int)configMgr.params.netCount) {
+            currentNetIndex = findOkSsidIndex();
+        }
+    }
+
+    String targetSsid = configMgr.params.net[currentNetIndex].ssid;
+    String targetPass = configMgr.params.net[currentNetIndex].password;
+
+    #if defined(DEBUG_WIFI_SETTING)
+        Serial.printf("[WiFi] Attempting connection to index %d: '%s'...\n", currentNetIndex, targetSsid.c_str());
+    #endif
+
+    // Trigger connection request
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(targetSsid.c_str(), targetPass.c_str());
+
+    // Brief check after trigger
+    if (WiFi.status() == WL_CONNECTED) {
+        wifiStatus = true;
+        attemptsOnCurrentSsid = 0;
+        
+        // Success: update "ok" SSID in config if modified
+        if (configMgr.params.lastOkSsid != targetSsid) {
             #if defined(DEBUG_WIFI_SETTING)
-                Serial.println(F("[WiFi] Attempting to reconnect WiFi..."));
+                Serial.printf("[WiFi] Connected to new network! Updating 'ok' SSID to '%s'\n", targetSsid.c_str());
+            #endif
+            configMgr.setLastOkSsid(targetSsid);
+        }
+        return true;
+    }
+
+    // 5. Connection failed on this tick
+    if (ssid_interval != 0) {
+        attemptsOnCurrentSsid++;
+        
+        // Advance to next SSID if attempt limit reached
+        if (attemptsOnCurrentSsid >= ssid_interval) {
+            attemptsOnCurrentSsid = 0;
+            currentNetIndex = (currentNetIndex + 1) % configMgr.params.netCount;
+            #if defined(DEBUG_WIFI_SETTING)
+                Serial.printf("[WiFi] Max attempts reached. Rotating to next SSID index: %d\n", currentNetIndex);
             #endif
         }
     }
-    return wifiStatus; 
+
+    return false; 
 }
 
 /**

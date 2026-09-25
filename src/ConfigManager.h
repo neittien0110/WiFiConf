@@ -3,16 +3,23 @@
 
 #include <Arduino.h>
 #include <LittleFS.h>
+#include <ArduinoJson.h>
 
-// --- ĐỊNH NGHĨA TÊN FILE TRONG LITTLEFS ---
-#define FILE_WIFI_SSID    "/ssid.txt"
-#define FILE_WIFI_PASS    "/password.txt"
-#define FILE_DEVICE_ID    "/deviceid.txt"
-#define FILE_WIFI_ENABLE  "/enabled.txt"
+#define CONFIG_FILE "/_sys_config.json"
+#ifndef NUM_OF_SSID
+#define NUM_OF_SSID 5
+#endif
 
-struct PersistentParams {
+struct WiFiCredential {
     String ssid;
     String password;
+};
+
+struct PersistentParams {
+    WiFiCredential net[NUM_OF_SSID];
+    uint8_t netCount = 0;
+    String lastOkSsid;
+    String macAddress;
     String deviceID;
     bool wifiEnabled;
 };
@@ -26,16 +33,17 @@ public:
     void loadAll();
     void saveAll();
 
-    // Các hàm cập nhật từng thành phần và lưu ngay
+    // Helper operations
     void setWifiEnabled(bool enabled);
-    void setWiFiConfig(String ssid, String pass);
     void setDeviceID(String id);
+    void setMacAddress(String mac);
+    void setLastOkSsid(String ssid);
+    void addOrUpdateWiFi(String ssid, String pass);
 
 private:
-    void readFile(const char* path, String &val);
-    void writeFile(const char* path, String val);
+    void loadDefaults();
 };
 
 extern ConfigManager configMgr; 
 
-#endif
+#endif // CONFIG_MANAGER_H

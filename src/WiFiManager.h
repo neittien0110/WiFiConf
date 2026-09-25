@@ -28,11 +28,19 @@ private:
     unsigned long lastWifiCheck = 0;
     WiFiSelfEnroll *myWiFi = nullptr;
 
+    // --- Added for Multi-SSID rotation state tracking ---
+    int currentNetIndex = -1;
+    unsigned int attemptsOnCurrentSsid = 0;
+
+    int findOkSsidIndex();
+
 public:
     WiFiManager();
     ~WiFiManager();
 
-    bool checkAndEstablishWiFiConnection(unsigned long interval = WIFI_CHECK_INTERVAL);
+    // Updated function signature with default parameters
+    bool checkAndEstablishWiFiConnection(unsigned long reconnect_interval = WIFI_CHECK_INTERVAL, unsigned int ssid_interval = 0);
+
     bool isInternetReady();
     void wakeupWiFi();
     void shutdownWiFi();

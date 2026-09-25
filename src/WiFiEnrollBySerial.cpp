@@ -3,6 +3,7 @@
 
 /** Khoảng thời gian 30 giây để nhắc lại hướng dẫn */
 #define PERIOD_REINTRODUCE 30000
+
 /**
  * @brief In hướng dẫn sử dụng các lệnh cấu hình ra màn hình Serial.
  */
@@ -12,6 +13,7 @@ void printUsage() {
     Serial.println(F("  ssid=[name]  : Set WiFi SSID"));         // Lệnh đặt tên WiFi
     Serial.println(F("  pass=[key]   : Set WiFi Password"));     // Lệnh đặt mật khẩu
     Serial.println(F("  id=[name]    : Set Device ID"));         // Lệnh đặt ID thiết bị
+    Serial.println(F("  mac=[addr]   : Set MAC Address (XX:XX:XX:XX:XX:XX)")); // Lệnh đặt địa chỉ MAC
     Serial.println(F("  exit         : Save and Exit"));         // Lệnh thoát
     Serial.println(F("--------------------------------------"));
 }
@@ -22,6 +24,10 @@ void printUsage() {
 bool EnrollBySerial() {
     unsigned long lastActivity = millis(); // Lưu thời điểm cuối cùng có tương tác
     bool shouldExit = false;               // Biến kiểm soát việc thoát vòng lặp
+
+    // Biến tạm lưu SSID/Password đang nhập trong phiên Serial
+    String tempSSID = (configMgr.params.netCount > 0) ? configMgr.params.net[0].ssid : "";
+    String tempPass = (configMgr.params.netCount > 0) ? configMgr.params.net[0].password : "";
 
     printUsage(); // Hiển thị hướng dẫn ngay khi vào chế độ này
 
@@ -48,15 +54,23 @@ bool EnrollBySerial() {
             } 
             // Kiểm tra lệnh nạp SSID
             else if (input.startsWith("ssid=")) {
-                String val = input.substring(5); // Cắt lấy phần nội dung sau "ssid="
-                configMgr.setWiFiConfig(val, configMgr.params.password); // Lưu vào ConfigManager
-                Serial.printf(">> OK: SSID set to [%s]\n", val.c_str());
+                tempSSID = input.substring(5); // Cắt lấy phần nội dung sau "ssid="
+                if (tempSSID.length() > 0) {
+                    configMgr.addOrUpdateWiFi(tempSSID, tempPass);
+                    Serial.printf(">> OK: SSID set to [%s]\n", tempSSID.c_str());
+                } else {
+                    Serial.println(F(">> Error: SSID cannot be empty!"));
+                }
             } 
             // Kiểm tra lệnh nạp Password
             else if (input.startsWith("pass=")) {
-                String val = input.substring(5); // Cắt lấy phần nội dung sau "pass="
-                configMgr.setWiFiConfig(configMgr.params.ssid, val); // Lưu vào ConfigManager
-                Serial.println(F(">> OK: Password updated."));
+                tempPass = input.substring(5); // Cắt lấy phần nội dung sau "pass="
+                if (tempSSID.length() > 0) {
+                    configMgr.addOrUpdateWiFi(tempSSID, tempPass);
+                    Serial.println(F(">> OK: Password updated for current SSID."));
+                } else {
+                    Serial.println(F(">> Error: Please set SSID first using 'ssid=[name]'"));
+                }
             } 
             // Kiểm tra lệnh nạp Device ID
             else if (input.startsWith("id=")) {
@@ -64,6 +78,12 @@ bool EnrollBySerial() {
                 configMgr.setDeviceID(val);      // Lưu vào ConfigManager
                 Serial.printf(">> OK: Device ID set to [%s]\n", val.c_str());
             } 
+            // Kiểm tra lệnh nạp MAC Address
+            else if (input.startsWith("mac=")) {
+                String val = input.substring(4); // Cắt lấy phần nội dung sau "mac="
+                configMgr.setMacAddress(val);    // Lưu vào ConfigManager
+                Serial.printf(">> OK: MAC Address set to [%s]\n", val.c_str());
+            }
             // Nếu nhập lệnh không hợp lệ
             else {
                 Serial.println(F(">> Unknown command!"));

@@ -1,0 +1,10 @@
+{
+  "net": [
+    {"s": "SOICT_CORE_BOARD", "p": "12345678"},
+    {"s": "Home_WiFi", "p": "88888888"}
+  ],
+  "ok": "SOICT_CORE_BOARD",
+  "mac": "24:24:B7:D0:B6:1C",
+  "dev_id": "mydevice",
+  "wifi_en": true
+}
